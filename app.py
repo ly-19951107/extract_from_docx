@@ -20,7 +20,8 @@ def main():
         return jsonify({'state': 0, 'msg': '非法的参数（application/json is needed!）'})
     template = args['template']
     file_path = args['file_path']
-    if template not in ['HVCPSS', 'CHVPSS', 'LVBERF', 'LVNRERF', 'LVRERF']:
+    if template not in ['HVCPSS', 'CHVPSS', 'LVBERF', 'LVNRERF', 'LVRERF', 'CMEDL', 'HVCERF', 'HVPSSR', 'HVSSS',
+                        'LVBEL', 'LVPSSR', 'LVSSS']:
         return jsonify({'state': 0, 'msg': f'不支持的模板名称：{template}'})
     if not os.path.exists(file_path):
         return jsonify({'state': 0, 'msg': f'非法的路径：{file_path}'})
@@ -34,7 +35,7 @@ def extract(template_name, file_path):
     else:
         files = os.listdir(file_path)
         for file in files:
-            if file.endswith('.dcox'):
+            if file.endswith('.docx'):
                 abs_file_path = os.path.join(file_path, file)
                 _extract(template_name, abs_file_path)
 
