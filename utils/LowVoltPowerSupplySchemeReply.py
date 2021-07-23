@@ -7,9 +7,16 @@ import pymysql
 from uuid import uuid1
 from collections import OrderedDict
 from config import db_config
-from utils import initialize
+from utils import initialize, std_rel
 
 SCHEME_ID = 'LVPSSR'
+
+LVPSSR_dict = {"cap_std": "附录B：高压（HV）总供电容量的估算方法", "pow_cap_std": "附录B：高压（HV）总供电容量的估算方法",
+               "pow_src_std": "6重要电力用户的供电电源配置", "meter_norm_std": "5电缆敷设",
+               "cur_trans_precision_std": "6.2电流互感器及电压互感器", "cur_trans_info_std": "6.2电流互感器及电压互感器"}
+
+class_std = {"customer": ["附录B：高压（HV）总供电容量的估算方法"],
+             "scheme": ["附录B：高压（HV）总供电容量的估算方法", "6重要电力用户的供电电源配置", "5电缆敷设", "6.2电流互感器及电压互感器"]}
 
 classes = {
     'high_volt_power_supply_schema_reply': '高压供电方案答复单',
@@ -49,6 +56,13 @@ data_properties = {
     'meter_norm': {'domain': 'scheme', 'desc': '电能表规格及接线方式'},
     'cur_trans_precision': {'domain': 'scheme', 'desc': '电流互感器精度'},
     'cur_trans_info': {'domain': 'scheme', 'desc': '电流互感器变比'},
+
+    'cap_std': {'domain': 'customer', 'desc': '供电容量标准'},
+    'pow_cap_std': {'domain': 'scheme', 'desc': '供电容量标准'},
+    'pow_src_std': {'domain': 'scheme', 'desc': '电源点标准'},
+    'meter_norm_std': {'domain': 'scheme', 'desc': '接线方式标准'},
+    'cur_trans_precision_std': {'domain': 'scheme', 'desc': '电流互感器标准'},
+    'cur_trans_info_std': {'domain': 'scheme', 'desc': '电流互感器标准'},
 }
 object_properties = {
     0: {
@@ -135,7 +149,14 @@ def read_file(file_path):
             i += 1
         else:
             i += 1
-    return customer, charge, scheme
+    customer.add_pro('cap_std', LVPSSR_dict['cap_std'])
+    scheme.add_pro('pow_cap_std', LVPSSR_dict['pow_cap_std'])
+    scheme.add_pro('pow_src_std', LVPSSR_dict['pow_src_std'])
+    scheme.add_pro('meter_norm_std', LVPSSR_dict['meter_norm_std'])
+    scheme.add_pro('cur_trans_precision_std', LVPSSR_dict['cur_trans_precision_std'])
+    scheme.add_pro('cur_trans_info_std', LVPSSR_dict['cur_trans_info_std'])
+    entity_dict = {'customer': customer, 'charge': charge, 'scheme': scheme}
+    return entity_dict
 
 
 class Entity:
@@ -147,7 +168,7 @@ class Entity:
         self.id_ = id_
 
     def add_pro(self, key, value):
-        if isinstance(key, str) and isinstance(value, str):
+        if isinstance(key, str) and isinstance(value, (str, list)):
             if key in self.pros:
                 if not self.pros[key]:
                     self.pros[key] = value
@@ -160,9 +181,10 @@ class Entity:
             raise
 
 
-def save(customer: Entity, charge: Entity, scheme: Entity):
+def save(entity_dict, object_properties1, class_std_id):
     conn = pymysql.connect(**db_config)
     cr = conn.cursor()
+    customer, charge, scheme = entity_dict['customer'], entity_dict['charge'], entity_dict['scheme']
     # 存客户
     tab = SCHEME_ID + '_' + customer.class_
     id_ = customer.id_
@@ -213,9 +235,30 @@ def save(customer: Entity, charge: Entity, scheme: Entity):
           f'"{uuid1().hex}", "{customer.id_}", "{scheme.id_}")'
     cr.execute(sql)
     conn.commit()
+    # 存实体——标准关系
+    for i in object_properties1:
+        rel = object_properties1[i]
+        domain = rel['domain']
+        range_ = rel['range']
+        rel_tab = SCHEME_ID + '_' + domain + '_2_' + range_
+        if isinstance(entity_dict[domain], Entity):
+            from_ids = [entity_dict[domain].id_]
+        else:
+            from_ids = [j.id_ for j in entity_dict[domain]]
+        for from_id in from_ids:
+            to_ids = class_std_id[domain][range_]
+            for to_id in to_ids:
+                sql = f'''insert into `{rel_tab}` (`id`, `from_id`, `to_id`) values (
+                                "{uuid1().hex}", "{from_id}", "{to_id}"
+                            )
+                            '''
+                cr.execute(sql)
+    conn.commit()
+    conn.close()
 
 
 if __name__ == '__main__':
-    file_path = '/Volumes/工作/2021年日常/7-北京业扩报装项目/文档解析/templates/低压供电方案答复单.docx'
+    file_path = r'C:\Users\liyang\Desktop\extract_from_docx\templates\低压供电方案答复单.docx'
+    object_properties1, class_std_id = std_rel(SCHEME_ID, class_std)
     initialize(SCHEME_ID, classes, data_properties, object_properties)
-    save(*read_file(file_path))
+    save(read_file(file_path), object_properties1, class_std_id)

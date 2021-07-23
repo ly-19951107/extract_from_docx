@@ -9,9 +9,13 @@ import re
 import pymysql
 from uuid import uuid1
 from config import db_config
-from utils import initialize
+from utils import initialize, std_rel
 
 SCHEME_ID = 'LVBERF'
+
+LVBERF_dict = {"single_house_cap_std": "附录B：高压（HV）总供电容量的估算方法"}
+
+class_std = {"customer": ["附录B：高压（HV）总供电容量的估算方法"]}
 
 # <<<<<配置区域
 classes = {
@@ -42,7 +46,10 @@ data_properties = {
     "assignee": {'domain': 'low_volt_batch_elec_regis_form', 'range': 'string', 'desc': '受理人'},
     "application_number": {'domain': 'low_volt_batch_elec_regis_form', 'range': 'string', 'desc': '申请编号'},
     "accept_date": {'domain': 'low_volt_batch_elec_regis_form', 'range': 'string', 'desc': '受理日期'},
-    "power_supply_company": {'domain': 'low_volt_batch_elec_regis_form', 'range': 'string', 'desc': '供电企业'}
+    "power_supply_company": {'domain': 'low_volt_batch_elec_regis_form', 'range': 'string', 'desc': '供电企业'},
+
+    "single_house_cap_std": {'domain': 'customer', "range": "string", "desc": "用户供电容量标准"}
+
 }
 
 object_properties = {
@@ -101,7 +108,7 @@ def read_file(file_path):
             values.append(str)
         else:
             str += message[s]
-    for k in keys[-4:]:
+    for k in keys[-5: -1]:
         for j in message[-6:]:
             if k in j:
                 info = re.compile(r'(.*)：(.*)')
@@ -109,6 +116,7 @@ def read_file(file_path):
                 values.append(v)
             else:
                 continue
+    values.extend(LVBERF_dict.values())
     entity_dict = {}
     for c in range(len(class_)):
         if class_[c] not in entity_dict:
@@ -120,7 +128,7 @@ def read_file(file_path):
     return entity_dict
 
 
-def save(entity_dict):
+def save(entity_dict, object_properties1, class_std_id):
     """将提取的结果存入对应的数据库"""
     conn = pymysql.connect(**db_config)
     cr = conn.cursor()
@@ -176,6 +184,26 @@ def save(entity_dict):
             '''
             cr.execute(sql)
     conn.commit()
+
+    # 存实体——标准关系
+    for i in object_properties1:
+        rel = object_properties1[i]
+        domain = rel['domain']
+        range_ = rel['range']
+        rel_tab = SCHEME_ID + '_' + domain + '_2_' + range_
+        if isinstance(entity_dict[domain], Entity):
+            from_ids = [entity_dict[domain].id_]
+        else:
+            from_ids = [j.id_ for j in entity_dict[domain]]
+        for from_id in from_ids:
+            to_ids = class_std_id[domain][range_]
+            for to_id in to_ids:
+                sql = f'''insert into `{rel_tab}` (`id`, `from_id`, `to_id`) values (
+                                    "{uuid1().hex}", "{from_id}", "{to_id}"
+                                )
+                                '''
+                cr.execute(sql)
+    conn.commit()
     conn.close()
 
 
@@ -201,6 +229,7 @@ class Entity:
 
 
 if __name__ == '__main__':
-    file_path = r'C:\Users\liyang\Desktop\extract\extract_from_docx\templates\低压批量用电登记表.docx'
+    file_path = r'C:\Users\liyang\Desktop\extract_from_docx\templates\低压批量用电登记表.docx'
+    object_properties1, class_std_id = std_rel(SCHEME_ID, class_std)
     initialize(SCHEME_ID, classes, data_properties, object_properties)
-    save(read_file(file_path))
+    save(read_file(file_path), object_properties1, class_std_id)

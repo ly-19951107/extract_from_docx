@@ -3,6 +3,7 @@
 
 一个文档会提取出
 """
+
 from docx import Document
 from docx.opc.exceptions import PackageNotFoundError
 import re
@@ -226,6 +227,6 @@ class Entity:
 
 
 if __name__ == '__main__':
-    file_path = r'C:\Users\liyang\Desktop\extract\extract_from_docx\templates\低压批量用电清单.docx'
+    file_path = r'C:\Users\liyang\Desktop\extract_from_docx\templates\低压批量用电清单.docx'
     initialize(SCHEME_ID, classes, data_properties, object_properties)
     save(read_file(file_path))

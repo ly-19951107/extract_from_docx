@@ -8,9 +8,13 @@ from uuid import uuid1
 from collections import OrderedDict
 from typing import List
 from config import db_config
-from utils import initialize
+from utils import initialize, std_rel
 
 SCHEME_ID = 'HVPSSR'
+
+HVPSSR_dict = {"cap_std": "附录B：高压（HV）总供电容量的估算方法"}
+
+class_std = {"customer": ["附录B：高压（HV）总供电容量的估算方法"]}
 
 classes = {
     'high_volt_power_supply_schema_reply': '高压供电方案答复单',
@@ -35,7 +39,9 @@ data_properties = {
     'amount_receivable': {'domain': 'charge', 'desc': '应收金额'},
     'charge_basis': {'domain': 'charge', 'desc': '收费依据'},
 
-    'sign_date': {'domain': 'high_volt_power_supply_schema_reply', 'desc': '签订日期'}
+    'sign_date': {'domain': 'high_volt_power_supply_schema_reply', 'desc': '签订日期'},
+
+    'cap_std': {'domain': 'customer', 'desc': '供电容量标准'}
 }
 object_properties = {
     0: {
@@ -118,7 +124,9 @@ def read_file(file_path):
                             distinct_cells[id(cell)] = cell.text.strip()
         else:
             i += 1
-    return customer, charges
+    customer.add_pro('cap_std', HVPSSR_dict['cap_std'])
+    entity_dict = {'customer': customer, 'charges': charges}
+    return entity_dict
 
 
 class Entity:
@@ -143,9 +151,10 @@ class Entity:
             raise
 
 
-def save(customer: Entity, charges: List[Entity]):
+def save(entity_dict, object_properties1, class_std_id):
     conn = pymysql.connect(**db_config)
     cr = conn.cursor()
+    customer, charges = entity_dict['customer'], entity_dict['charges']
     # 存客户
     tab = SCHEME_ID + '_' + customer.class_
     from_id = id_ = customer.id_
@@ -184,9 +193,30 @@ def save(customer: Entity, charges: List[Entity]):
               f'"{uuid1().hex}", "{from_id}", "{i}")'
         cr.execute(sql)
     conn.commit()
+    # 存实体——标准关系
+    for i in object_properties1:
+        rel = object_properties1[i]
+        domain = rel['domain']
+        range_ = rel['range']
+        rel_tab = SCHEME_ID + '_' + domain + '_2_' + range_
+        if isinstance(entity_dict[domain], Entity):
+            from_ids = [entity_dict[domain].id_]
+        else:
+            from_ids = [j.id_ for j in entity_dict[domain]]
+        for from_id in from_ids:
+            to_ids = class_std_id[domain][range_]
+            for to_id in to_ids:
+                sql = f'''insert into `{rel_tab}` (`id`, `from_id`, `to_id`) values (
+                                    "{uuid1().hex}", "{from_id}", "{to_id}"
+                                )
+                                '''
+                cr.execute(sql)
+    conn.commit()
+    conn.close()
 
 
 if __name__ == '__main__':
-    file_path = '/Volumes/工作/2021年日常/7-北京业扩报装项目/文档解析/templates/高压供电方案答复单.docx'
+    file_path = r'C:\Users\liyang\Desktop\extract_from_docx\templates\高压供电方案答复单.docx'
+    object_properties1, class_std_id = std_rel(SCHEME_ID, class_std)
     initialize(SCHEME_ID, classes, data_properties, object_properties)
-    save(*read_file(file_path))
+    save(read_file(file_path), object_properties1, class_std_id)

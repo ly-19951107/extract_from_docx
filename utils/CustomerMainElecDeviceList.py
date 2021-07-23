@@ -13,6 +13,7 @@ from utils import initialize
 
 SCHEME_ID = 'CMEDL'
 
+
 # <<<<<配置区域
 classes = {
     'cus_main_elec_device_list': '客户主要用电设备清单',
@@ -244,6 +245,6 @@ class Entity:
 
 
 if __name__ == '__main__':
-    file_path = r'C:\Users\liyang\Desktop\extract\extract_from_docx\templates\客户主要用电设备清单.docx'
+    file_path = r'C:\Users\liyang\Desktop\extract_from_docx\templates\客户主要用电设备清单.docx'
     initialize(SCHEME_ID, classes, data_properties, object_properties)
     save(read_file(file_path))

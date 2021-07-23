@@ -10,9 +10,13 @@ import re
 import pymysql
 from uuid import uuid1
 from config import db_config
-from utils import initialize
+from utils import initialize, std_rel
 
 SCHEME_ID = 'HVSSS'
+
+HVSSS_dict = {"meter_point_info_std": ["10电能计量", "6电能计量装置技术要求"]}
+
+class_std = {"manager": ["10电能计量", "6电能计量装置技术要求"]}
 
 # <<<<<配置区域
 classes = {
@@ -45,7 +49,9 @@ data_properties = {
     "other_ins": {'domain': 'manager', "range": "string", "desc": "备注"},
 
     "assignee": {'domain': 'high_volt_site_survey_sheet', 'range': 'string', 'desc': '勘查人'},
-    "accept_date": {'domain': 'high_volt_site_survey_sheet', 'range': 'string', 'desc': '勘查日期'}
+    "accept_date": {'domain': 'high_volt_site_survey_sheet', 'range': 'string', 'desc': '勘查日期'},
+
+    "meter_point_info_std": {'domain': 'manager', "range": "string", "desc": "计量点标准"}
 }
 
 object_properties = {
@@ -129,6 +135,7 @@ def read_file(file_path):
             if k in t:
                 line.remove(t)
     values.extend(line)
+    values.extend(HVSSS_dict.values())
 
     # 保存结果
     entity_dict = {}
@@ -142,7 +149,7 @@ def read_file(file_path):
     return entity_dict
 
 
-def save(entity_dict):
+def save(entity_dict, object_properties1, class_std_id):
     """将提取的结果存入对应的数据库"""
     conn = pymysql.connect(**db_config)
     cr = conn.cursor()
@@ -198,6 +205,26 @@ def save(entity_dict):
             '''
             cr.execute(sql)
     conn.commit()
+
+    # 存实体——标准关系
+    for i in object_properties1:
+        rel = object_properties1[i]
+        domain = rel['domain']
+        range_ = rel['range']
+        rel_tab = SCHEME_ID + '_' + domain + '_2_' + range_
+        if isinstance(entity_dict[domain], Entity):
+            from_ids = [entity_dict[domain].id_]
+        else:
+            from_ids = [j.id_ for j in entity_dict[domain]]
+        for from_id in from_ids:
+            to_ids = class_std_id[domain][range_]
+            for to_id in to_ids:
+                sql = f'''insert into `{rel_tab}` (`id`, `from_id`, `to_id`) values (
+                                    "{uuid1().hex}", "{from_id}", "{to_id}"
+                                )
+                                '''
+                cr.execute(sql)
+    conn.commit()
     conn.close()
 
 
@@ -209,7 +236,7 @@ class Entity:
         self.id_ = id_
 
     def add_pro(self, key, value):
-        if isinstance(key, str) and isinstance(value, str):
+        if isinstance(key, str) and isinstance(value, (str, list)):
             if key in self.pros:
                 if not self.pros[key]:
                     self.pros[key] = value
@@ -223,6 +250,7 @@ class Entity:
 
 
 if __name__ == '__main__':
-    file_path = r'C:\Users\liyang\Desktop\extract\extract_from_docx\templates\高压现场勘察单.docx'
+    file_path = r'C:\Users\liyang\Desktop\extract_from_docx\templates\高压现场勘察单.docx'
+    object_properties1, class_std_id = std_rel(SCHEME_ID, class_std)
     initialize(SCHEME_ID, classes, data_properties, object_properties)
-    save(read_file(file_path))
+    save(read_file(file_path), object_properties1, class_std_id)

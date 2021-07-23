@@ -9,9 +9,22 @@ import re
 import pymysql
 from uuid import uuid1
 from config import db_config
-from utils import initialize
+from utils import initialize, std_rel
 
 SCHEME_ID = 'CHVPSS'
+
+CHVPSS_dict = {"power_supply_cap_std": "附录B：高压（HV）总供电容量的估算方法", "power_source_std": "6重要电力用户的供电电源配置",
+               "lay_mode_std": "5电缆敷设", "line_supply_cap_std": "附录B：高压（HV）总供电容量的估算方法",
+               "main_line_type_std": "5电缆敷设", "security_cap_std": ["5.3备用电源自动投入", "7重要电力用户的自备应急电源配置"],
+               "meter_point_std": ["10电能计量", "6电能计量装置技术要求"], "meter_line_type_std": "5电缆敷设",
+               "volt_trans_std": "6.2电流互感器及电压互感器", "cur_trans_std": "6.2电流互感器及电压互感器",
+               "charge_std": ["10电能计量", "6电能计量装置技术要求"]}
+
+class_std = {"power_supply_cap": ["附录B：高压（HV）总供电容量的估算方法"],
+             "power_source": ["6重要电力用户的供电电源配置", "5电缆敷设", "附录B：高压（HV）总供电容量的估算方法"],
+             "receive_point": ["5电缆敷设", "5.3备用电源自动投入", "7重要电力用户的自备应急电源配置"],
+             "meter_point": ["10电能计量", "6电能计量装置技术要求", "5电缆敷设", "6.2电流互感器及电压互感器"],
+             "charge": ["10电能计量", "6电能计量装置技术要求"]}
 
 # <<<<<配置区域
 rules = [
@@ -45,8 +58,8 @@ rules = [
     {
         "rule_no": 3,
         "location_rule": r'.*经计算用电负荷.*二级负荷.*千瓦',
-        "keys": ["计算负荷", "供用电容量", "一级负荷", "二级负荷"],
-        "pros": ["cal_load", "supply_cons_cap", "first_load", "second_load"],
+        "keys": ["计算负荷", "供用电容量", "一级负荷", "二级负荷", "供电容量标准"],
+        "pros": ["cal_load", "supply_cons_cap", "first_load", "second_load", "power_supply_cap_std"],
         "class": 'power_supply_cap',
         "class_ZH": '供电容量',
         "match_once": True,
@@ -63,9 +76,11 @@ rules = [
     {
         "rule_no": 5,
         "location_rule": r"主供电源.*母线的.*供电线路.*线路参数.*与公配线路.*",
-        "keys": ["主供电源变电所", "开关", "接线方式", "敷设方式", "线路参数", "供电容量", "接点设备"],
+        "keys": ["主供电源变电所", "开关", "接线方式", "敷设方式", "线路参数", "供电容量", "接点设备", "供电电源标准", "敷设方式标准",
+                 "供电容量标准"],
         "pros": ['power_source_no', 'main_or_standby', 'subs', 'switch', 'conn_mode', 'lay_mode',
-                 'line_para', 'line_supply_cap', 'contact_device'],
+                 'line_para', 'line_supply_cap', 'contact_device', 'power_source_std', 'lay_mode_std',
+                 'line_supply_cap_std'],
         "class": 'power_source',
         "class_ZH": '供电电源',
         "match_once": False,
@@ -73,9 +88,10 @@ rules = [
     {
         "rule_no": 6,
         "location_rule": r"备用电源.*母线的.*供电线路.*线路参数.*与公配线路.*",
-        "keys": ["备用电源变电所", "母线开关", "接线方式", "敷设方式", "线路参数", "供电容量", "接点设备"],
+        "keys": ["备用电源变电所", "母线开关", "接线方式", "敷设方式", "线路参数", "供电容量", "接点设备", "供电电源标准", "敷设方式标准",
+                 "供电容量标准"],
         "pros": ['power_source_no', 'main_or_standby', 'subs', 'switch', 'conn_mode', 'lay_mode', 'line_para',
-                 'line_supply_cap', 'contact_device'],
+                 'line_supply_cap', 'contact_device', 'power_source_std', 'lay_mode_std', 'line_supply_cap_std'],
         "class": 'power_source',
         "class_ZH": '供电电源',
         "match_once": True,
@@ -92,9 +108,9 @@ rules = [
     {
         "rule_no": 8,
         "location_rule": r"采用.*设进线柜.*台",
-        "keys": ["主接线方式", "进线柜数量", "PT柜数量", "馈电柜数量", "联络柜数量", "其它数量"],
+        "keys": ["主接线方式", "进线柜数量", "PT柜数量", "馈电柜数量", "联络柜数量", "其它数量", "主接线方式标准"],
         "pros": ["main_line_type", "in_line_cabinet_num", "PT_cabinet_num", "feed_cabinet_num", "contact_cabinet_num",
-                 "other_cabinet_num"],
+                 "other_cabinet_num", "main_line_type_std"],
         'class': 'receive_point',
         "class_ZH": "受电点",
         "match_once": True,
@@ -111,9 +127,9 @@ rules = [
     },
     {
         "rule_no": 10,
-        "location_rule": r"用电人一、二级负荷.*自备保安容量.*千伏安(千瓦)",
-        "keys": ['客户自备保安容量', '客户自备保安容量'],
-        "pros": ['security_cap', 'security_cap'],
+        "location_rule": r".*用电人一、二级负荷.*由客户自备.*",
+        "keys": ['客户自备保安容量', '客户自备保安容量', '客户自备保安容量标准'],
+        "pros": ['security_cap', 'security_cap', 'security_cap_std'],
         'class': 'receive_point',
         "class_ZH": "受电点",
         "match_once": True,
@@ -140,10 +156,11 @@ rules = [
         "rule_no": 13,
         "location_rule": r'计量点.*用于计量用电.*电压互感.*',
         "keys": ['计量点编号', "用电量类别", "计量装置位置", "计量方式", "接线方式", "电能表规格", "精度",
-                 "电压互感器规格", "精度", "电流互感器规格", "精度", "电量采集系统"],
+                 "电压互感器规格", "精度", "电流互感器规格", "精度", "电量采集系统",
+                 "计量点标准", "接线方式标准",  "电压互感器标准", "电流互感器标准"],
         'pros': ['meter_point_no', 'point_elec_type', 'position', 'meter_type', 'meter_line_type',
-                 'meter_specs', 'precision', 'volt_trans', 'volt_pre',
-                 'cur_trans', 'cur_pre', 'acquisition'],
+                 'meter_specs', 'precision', 'volt_trans', 'volt_pre', 'cur_trans', 'cur_pre', 'acquisition',
+                 'meter_point_std', 'meter_line_type_std', 'volt_trans_std', 'cur_trans_std'],
         "class": 'meter_point',
         "class_ZH": "计量点",
         "match_once": False,
@@ -151,8 +168,8 @@ rules = [
     {
         "rule_no": 14,
         "location_rule": r'.*根据客户的用电分类.*',
-        "keys": ["收费方式", "电价类别", "电价类别", "电价类别"],
-        "pros": ['method', 'elec_price_type', 'elec_price_type', 'elec_price_type'],
+        "keys": ["收费方式", "电价类别", "电价类别", "电价类别", "收费标准"],
+        "pros": ['method', 'elec_price_type', 'elec_price_type', 'elec_price_type', 'charge_std'],
         "class": 'charge',
         "class_ZH": "收费",
         "match_once": True,
@@ -208,6 +225,7 @@ data_properties = {
     "supply_cons_cap": {"domain": "power_supply_cap", "range": "string", "desc": "供用电容量"},
     "first_load": {"domain": "power_supply_cap", "range": "string", "desc": "一级负荷"},
     "second_load": {"domain": "power_supply_cap", "range": "string", "desc": "二级负荷"},
+    "power_supply_cap_std": {"domain": "power_supply_cap", "range": "string", "desc": "供电容量标准"},
 
     "power_source_type": {"domain": "power_supply_mode", "range": "string", "desc": "供电电源类型"},
     "main_volt": {"domain": "power_supply_mode", "range": "string", "desc": "主供电源电压等级"},
@@ -223,7 +241,10 @@ data_properties = {
     "lay_mode": {"domain": "power_source", "range": "string", "desc": "供电线路敷设方式"},
     "line_para": {"domain": "power_source", "range": "string", "desc": "线路型号与参数"},
     "line_supply_cap": {"domain": "power_source", "range": "string", "desc": "线路供电容量"},
-    "contact_device": {"domain": "power_source", "range": "string", "desc": "线路供电容量"},
+    "contact_device": {"domain": "power_source", "range": "string", "desc": "接点设备"},
+    "power_source_std": {"domain": "power_source", "range": "string", "desc": "供电电源标准"},
+    "lay_mode_std": {"domain": "power_source", "range": "string", "desc": "敷设方式标准"},
+    "line_supply_cap_std": {"domain": "power_source", "range": "string", "desc": "供电容量标准"},
 
     "main_line_type": {"domain": "receive_point", 'range': 'string', 'desc': '主接线方式'},
     "in_line_cabinet_num": {"domain": "receive_point", 'range': 'string', 'desc': '进线柜数量'},
@@ -233,6 +254,8 @@ data_properties = {
     "other_cabinet_num": {"domain": "receive_point", 'range': 'string', 'desc': '其他数量'},
     "security_cap": {"domain": "receive_point", 'range': 'string', 'desc': '客户自备保安容量'},
     "run_mode": {"domain": "receive_point", 'range': 'string', 'desc': '运行方式'},
+    "main_line_type_std": {"domain": "receive_point", 'range': 'string', 'desc': '接线方式标准'},
+    "security_cap_std": {"domain": "receive_point", 'range': 'string', 'desc': '客户自备保安容量标准'},
 
     "power_station_no": {"domain": "power_station", 'range': 'string', 'desc': '配电站编号'},
     "trans_type": {"domain": "power_station", 'range': 'string', 'desc': '变压器类型'},
@@ -254,9 +277,14 @@ data_properties = {
     "cur_trans": {"domain": "meter_point", 'range': 'string', 'desc': '电流互感器规格'},
     "cur_pre": {"domain": "meter_point", 'range': 'string', 'desc': '电流互感器精度'},
     "acquisition": {"domain": "meter_point", 'range': 'string', 'desc': '电量采集系统'},
+    "meter_point_std": {"domain": "meter_point", 'range': 'string', 'desc': '计量点标准'},
+    "meter_line_type_std": {"domain": "meter_point", 'range': 'string', 'desc': '接线方式标准'},
+    "volt_trans_std": {"domain": "meter_point", 'range': 'string', 'desc': '电压互感器标准'},
+    "cur_trans_std": {"domain": "meter_point", 'range': 'string', 'desc': '电流互感器标准'},
 
     "method": {"domain": "charge", 'range': 'string', 'desc': '收费方式'},
-    "elec_price_type": {"domain": "charge", 'range': 'string', 'desc': '电价类别'}
+    "elec_price_type": {"domain": "charge", 'range': 'string', 'desc': '电价类别'},
+    "charge_std": {"domain": "charge", 'range': 'string', 'desc': '收费标准'}
 }
 
 
@@ -344,7 +372,10 @@ def read_file(file_path):
                     entity = Entity(class_, uuid1().hex)
                     for j in range(len(pros)):
                         pro = pros[j]
-                        value = values[j]
+                        if j < len(values):
+                            value = values[j]
+                        else:
+                            value = CHVPSS_dict[pro]
                         entity.add_pro(pro, value)
                     if class_ in entity_dict:
                         entity_dict[class_].append(entity)
@@ -355,7 +386,10 @@ def read_file(file_path):
                     entity = Entity(class_, uuid1().hex)
                     for j in range(len(pros)):
                         pro = pros[j]
-                        value = values[j]
+                        if j < len(values):
+                            value = values[j]
+                        else:
+                            value = CHVPSS_dict[pro]
                         entity.add_pro(pro, value)
                     if class_ in entity_dict:
                         entity_dict[class_].append(entity)
@@ -366,7 +400,10 @@ def read_file(file_path):
                     entity = Entity(class_, uuid1().hex)
                     for j in range(len(pros)):
                         pro = pros[j]
-                        value = values[j]
+                        if j < len(values):
+                            value = values[j]
+                        else:
+                            value = CHVPSS_dict[pro]
                         entity.add_pro(pro, value)
                     if class_ in entity_dict:
                         entity_dict[class_].append(entity)
@@ -377,7 +414,10 @@ def read_file(file_path):
                     entity = Entity(class_, uuid1().hex)
                     for j in range(len(pros)):
                         pro = pros[j]
-                        value = values[j]
+                        if j < len(values):
+                            value = values[j]
+                        else:
+                            value = CHVPSS_dict[pro]
                         entity.add_pro(pro, value)
                     if class_ in entity_dict:
                         entity_dict[class_].append(entity)
@@ -393,11 +433,17 @@ def read_file(file_path):
                     for j in range(len(pros)):
                         if rule_no == 3:
                             pro = pros[j]
-                            value = values[j + 6]
+                            if j < len(values) - 6:
+                                value = values[j + 6]
+                            else:
+                                value = CHVPSS_dict[pro]
                             entity.add_pro(pro, value)
                         else:
                             pro = pros[j]
-                            value = values[j]
+                            if j < len(values):
+                                value = values[j]
+                            else:
+                                value = CHVPSS_dict[pro]
                             entity.add_pro(pro, value)
                 if match_once:
                     break
@@ -431,7 +477,7 @@ def cluster_underline(runs):
     return texts
 
 
-def save(entity_dict):
+def save(entity_dict, object_properties1, class_std_id):
     """将提取的结果存入对应的数据库"""
     conn = pymysql.connect(**db_config)
     cr = conn.cursor()
@@ -487,6 +533,26 @@ def save(entity_dict):
             '''
             cr.execute(sql)
     conn.commit()
+
+    # 存实体——标准关系
+    for i in object_properties1:
+        rel = object_properties1[i]
+        domain = rel['domain']
+        range_ = rel['range']
+        rel_tab = SCHEME_ID + '_' + domain + '_2_' + range_
+        if isinstance(entity_dict[domain], Entity):
+            from_ids = [entity_dict[domain].id_]
+        else:
+            from_ids = [j.id_ for j in entity_dict[domain]]
+        for from_id in from_ids:
+            to_ids = class_std_id[domain][range_]
+            for to_id in to_ids:
+                sql = f'''insert into `{rel_tab}` (`id`, `from_id`, `to_id`) values (
+                                    "{uuid1().hex}", "{from_id}", "{to_id}"
+                                )
+                                '''
+                cr.execute(sql)
+    conn.commit()
     conn.close()
 
 
@@ -498,7 +564,7 @@ class Entity:
         self.id_ = id_
 
     def add_pro(self, key, value):
-        if isinstance(key, str) and isinstance(value, str):
+        if isinstance(key, str) and isinstance(value, (str, list)):
             if key in self.pros:
                 if not self.pros[key]:
                     self.pros[key] = value
@@ -543,6 +609,7 @@ def handle_13(p):
 
 
 if __name__ == '__main__':
-    file_path = r'C:\Users\liyang\Desktop\extract\extract_from_docx\templates\居民小区高压供电方案.docx'
+    file_path = r'C:\Users\liyang\Desktop\extract_from_docx\templates\居民小区高压供电方案.docx'
+    object_properties1, class_std_id = std_rel(SCHEME_ID, class_std)
     initialize(SCHEME_ID, classes, data_properties, object_properties)
-    save(read_file(file_path))
+    save(read_file(file_path), object_properties1, class_std_id)

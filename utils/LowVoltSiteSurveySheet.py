@@ -10,10 +10,13 @@ import re
 import pymysql
 from uuid import uuid1
 from config import db_config
-from utils import initialize
+from utils import initialize, std_rel
 
 SCHEME_ID = 'LVSSS'
 
+LVSSS_dict = {"meter_point_info_std": ["10电能计量", "6电能计量装置技术要求"]}
+
+class_std = {"manager": ["10电能计量", "6电能计量装置技术要求"]}
 # <<<<<配置区域
 classes = {
     'low_volt_site_survey_sheet': '低压现场勘察单',
@@ -52,7 +55,9 @@ data_properties = {
     "remark": {'domain': 'device', "range": "string", "desc": "备注"},
 
     "assignee": {'domain': 'low_volt_site_survey_sheet', 'range': 'string', 'desc': '勘查人'},
-    "accept_date": {'domain': 'low_volt_site_survey_sheet', 'range': 'string', 'desc': '勘查日期'}
+    "accept_date": {'domain': 'low_volt_site_survey_sheet', 'range': 'string', 'desc': '勘查日期'},
+
+    "meter_point_info_std": {'domain': 'manager', "range": "string", "desc": "计量点标准"}
 }
 
 object_properties = {
@@ -93,8 +98,8 @@ def read_file(file_path):
     except PackageNotFoundError:
         print(f'路径不正确或目标为加密文档：{file_path}')
         return
-    class_ = [data_properties[i]['domain'] for i in data_properties]   # 每个属性对应的实体
-    pros = [i for i in data_properties.keys()]   # 所有属性即表字段名
+    class_ = [data_properties[i]['domain'] for i in data_properties]  # 每个属性对应的实体
+    pros = [i for i in data_properties.keys()]  # 所有属性即表字段名
     keys = [data_properties[i]['desc'] for i in data_properties]  # 所有属性中文名称即表格中给出的属性
     message = []
     table = docx.tables[0]  # 表格
@@ -150,10 +155,10 @@ def read_file(file_path):
 
     # 保存设备信息内容
     n1 = num
-    n2 = len(class_) - 2
+    n2 = len(class_) - 3
     n = n2 - n1
     count = 0
-    for c in range(-5, - 2):
+    for c in range(-6, - 3):
         entity = Entity(class_[num], uuid1().hex)
         for j in range(n1, n2):
             entity.add_pro(pros[j - count * n], values[j])
@@ -176,8 +181,9 @@ def read_file(file_path):
             if k in t:
                 line.remove(t)
     values.extend(line)
-    # 保存最后一行内容
-    for c in range(len(class_) - 2, len(class_)):
+    values.extend(LVSSS_dict.values())
+    # 保存最后一行及标准内容
+    for c in range(len(class_) - 3, len(class_)):
         if class_[c] not in entity_dict:
             entity = Entity(class_[c], uuid1().hex)
             entity_dict[class_[c]] = entity
@@ -187,7 +193,7 @@ def read_file(file_path):
     return entity_dict
 
 
-def save(entity_dict):
+def save(entity_dict, object_properties1, class_std_id):
     """将提取的结果存入对应的数据库"""
     conn = pymysql.connect(**db_config)
     cr = conn.cursor()
@@ -243,18 +249,39 @@ def save(entity_dict):
             '''
             cr.execute(sql)
     conn.commit()
+
+    # 存实体——标准关系
+    for i in object_properties1:
+        rel = object_properties1[i]
+        domain = rel['domain']
+        range_ = rel['range']
+        rel_tab = SCHEME_ID + '_' + domain + '_2_' + range_
+        if isinstance(entity_dict[domain], Entity):
+            from_ids = [entity_dict[domain].id_]
+        else:
+            from_ids = [j.id_ for j in entity_dict[domain]]
+        for from_id in from_ids:
+            to_ids = class_std_id[domain][range_]
+            for to_id in to_ids:
+                sql = f'''insert into `{rel_tab}` (`id`, `from_id`, `to_id`) values (
+                                    "{uuid1().hex}", "{from_id}", "{to_id}"
+                                )
+                                '''
+                cr.execute(sql)
+    conn.commit()
     conn.close()
 
 
 class Entity:
     """实例表示从模板中提取出来的一个实体"""
+
     def __init__(self, class_, id_):
         self.class_ = class_
         self.pros = {}
         self.id_ = id_
 
     def add_pro(self, key, value):
-        if isinstance(key, str) and isinstance(value, str):
+        if isinstance(key, str) and isinstance(value, (str, list)):
             if key in self.pros:
                 if not self.pros[key]:
                     self.pros[key] = value
@@ -268,6 +295,7 @@ class Entity:
 
 
 if __name__ == '__main__':
-    file_path = r'C:\Users\liyang\Desktop\extract\extract_from_docx\templates\低压现场勘察单.docx'
+    file_path = r'C:\Users\liyang\Desktop\extract_from_docx\templates\低压现场勘察单.docx'
+    object_properties1, class_std_id = std_rel(SCHEME_ID, class_std)
     initialize(SCHEME_ID, classes, data_properties, object_properties)
-    save(read_file(file_path))
+    save(read_file(file_path), object_properties1, class_std_id)

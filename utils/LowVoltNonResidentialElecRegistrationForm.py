@@ -13,6 +13,7 @@ from utils import initialize
 
 SCHEME_ID = 'LVNRERF'
 
+
 # <<<<<配置区域
 classes = {
     'low_volt_non_resident_elec_regis_form': '低压非居民用电登记表',
@@ -230,6 +231,6 @@ class Entity:
 
 
 if __name__ == '__main__':
-    file_path = r'C:\Users\liyang\Desktop\extract\extract_from_docx\templates\低压非居民用电登记表.docx'
+    file_path = r'C:\Users\liyang\Desktop\extract_from_docx\templates\低压非居民用电登记表.docx'
     initialize(SCHEME_ID, classes, data_properties, object_properties)
     save(read_file(file_path))
